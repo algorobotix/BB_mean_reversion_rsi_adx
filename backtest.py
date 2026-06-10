@@ -373,14 +373,24 @@ def plot_tradingview(
         hoverlabel=dict(bgcolor='#1e2130', font_color=TEXT),
     )
 
-    # ── X-axis: bound to dataset range, initial view = last 500 bars ─────────
+    # ── X-axis: initial view ends at last trade, spans 500 bars ─────────────
     bar_width = df.index[-1] - df.index[-2]
-    x_data_start = str(df.index[0])
     x_data_end = str(df.index[-1] + bar_width * 3)
-    n_show = min(500, len(df))
-    x_view_start = str(df.index[-n_show])
+
+    if trades_log:
+        last_exit = max(pd.to_datetime(t['Exit Time']) for t in trades_log)
+        anchor = df.index.searchsorted(last_exit)          # position in df
+        start_pos = max(0, anchor - 490)
+        end_pos   = min(len(df) - 1, anchor + 10)
+        x_view_start = str(df.index[start_pos])
+        x_view_end   = str(df.index[end_pos] + bar_width * 3)
+    else:
+        n_show = min(500, len(df))
+        x_view_start = str(df.index[-n_show])
+        x_view_end   = x_data_end
+
     fig.update_xaxes(
-        range=[x_view_start, x_data_end],
+        range=[x_view_start, x_view_end],
         autorange=False,
     )
 
@@ -463,7 +473,7 @@ def run_backtest(df: pd.DataFrame, symbol: str, plot: bool = False):
 
 
 if __name__ == '__main__':
-    SYMBOL = 'BTCUSDT'
+    SYMBOL = 'ETHUSDT'
     print(f"📂 1. Загрузка данных для {SYMBOL} (таймфрейм: {interval})...")
     df_main = read_df_from_csv(SYMBOL, interval=interval)
 
