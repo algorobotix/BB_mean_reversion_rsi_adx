@@ -1,0 +1,28 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE / editor
+.idea/
+.vscode/
+
+# Claude Code session files
+.claude/
+
+# Historical OHLCV data (large CSVs, not tracked in git)
+klines/
+data/
+
+# Generated outputs
+backtest_*.html
+backtest_*.png
+trades_*.csv
+optimization_results/
+
+# Jupyter
+.ipynb_checkpoints/

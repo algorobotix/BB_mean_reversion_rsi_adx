@@ -1,0 +1,90 @@
+// ══════════════════════════════════════════════════════════════════════════════
+// BB Mean Reversion + RSI + ADX  |  Pine Script v6  |  TradingView
+// ══════════════════════════════════════════════════════════════════════════════
+// Logic mirrors backtest.py (Backtrader):
+//   Entry  : close crosses BB band + RSI oversold/overbought + ADX < threshold
+//   SL     : fixed at entry_close ± sl_mult × ATR  (never moves)
+//   TP     : close touches BB middle band
+// ══════════════════════════════════════════════════════════════════════════════
+//@version=6
+strategy(
+    title                  = "BB Mean Reversion + RSI + ADX",
+    shorttitle             = "BB_MR_RSI_ADX",
+    overlay                = true,
+    initial_capital        = 1500,
+    default_qty_type       = strategy.cash,
+    default_qty_value      = 150,
+    commission_type        = strategy.commission.percent,
+    commission_value       = 0.1,
+    currency               = currency.USD,
+    calc_on_every_tick     = false
+)
+
+// ─── Inputs ───────────────────────────────────────────────────────────────────
+rsiLen    = input.int  (14,  "RSI Period",       group = "Indicators", minval = 1)
+rsiLower  = input.int  (30,  "RSI Oversold",     group = "Indicators", minval = 1,  maxval = 49)
+rsiUpper  = input.int  (70,  "RSI Overbought",   group = "Indicators", minval = 51, maxval = 99)
+bbLen     = input.int  (20,  "BB Period",        group = "Indicators", minval = 1)
+bbMult    = input.float(2.0, "BB Std Dev",       group = "Indicators", minval = 0.1, step = 0.1)
+adxLen    = input.int  (14,  "ADX Period",       group = "Indicators", minval = 1)
+adxThresh = input.int  (30,  "ADX Threshold",    group = "Indicators", minval = 1)
+atrLen    = input.int  (14,  "ATR Period",       group = "Risk",       minval = 1)
+slMult    = input.float(2.5, "Stop Loss × ATR",  group = "Risk",       minval = 0.1, step = 0.1)
+
+// ─── Indicators ───────────────────────────────────────────────────────────────
+rsiVal                    = ta.rsi(close, rsiLen)
+[bbMid, bbUpper, bbLower] = ta.bb(close, bbLen, bbMult)
+atrVal                    = ta.atr(atrLen)
+[_, _, adxVal]            = ta.dmi(adxLen, adxLen)
+
+// ─── Entry conditions ─────────────────────────────────────────────────────────
+longSignal  = close < bbLower and rsiVal < rsiLower and adxVal < adxThresh
+shortSignal = close > bbUpper and rsiVal > rsiUpper and adxVal < adxThresh
+
+// ─── Fixed stop level (set at entry, never updated) ───────────────────────────
+var float slLevel = na
+
+// ─── Entries ──────────────────────────────────────────────────────────────────
+if strategy.position_size == 0
+    if longSignal
+        slLevel := close - slMult * atrVal
+        strategy.entry("Long", strategy.long)
+    else if shortSignal
+        slLevel := close + slMult * atrVal
+        strategy.entry("Short", strategy.short)
+
+// ─── Exits ────────────────────────────────────────────────────────────────────
+// Update on every bar so the TP tracks the moving bbMid; fills intrabar at
+// exactly bbMid (limit), not at bar close which could be near the upper band.
+if strategy.position_size > 0
+    strategy.exit("Long Exit", "Long",
+                  limit = bbMid, stop = slLevel,
+                  comment_profit = "BB_MID", comment_loss = "FIXED_SL")
+
+if strategy.position_size < 0
+    strategy.exit("Short Exit", "Short",
+                  limit = bbMid, stop = slLevel,
+                  comment_profit = "BB_MID", comment_loss = "FIXED_SL")
+
+// ─── BB bands plot ────────────────────────────────────────────────────────────
+pUpper = plot(bbUpper, "BB Upper", color = color.new(color.blue, 55), linewidth = 1)
+pLower = plot(bbLower, "BB Lower", color = color.new(color.blue, 55), linewidth = 1)
+plot(bbMid, "BB Mid",  color = color.new(color.blue, 25), linewidth = 1)
+fill(pUpper, pLower, color = color.new(color.blue, 92))
+
+// ─── Stop loss level ──────────────────────────────────────────────────────────
+plot(strategy.position_size != 0 ? slLevel : na, "Stop Loss",
+     color = color.red, style = plot.style_linebr, linewidth = 2)
+
+// ─── Entry signals ────────────────────────────────────────────────────────────
+plotshape(longSignal  and strategy.position_size == 0,
+     title = "Long Signal",  style = shape.triangleup,
+     location = location.belowbar, color = color.green, size = size.small)
+
+plotshape(shortSignal and strategy.position_size == 0,
+     title = "Short Signal", style = shape.triangledown,
+     location = location.abovebar, color = color.red, size = size.small)
+
+// ─── Background: highlight open positions ────────────────────────────────────
+bgcolor(strategy.position_size > 0 ? color.new(color.green, 92) :
+        strategy.position_size < 0 ? color.new(color.red,   92) : na)
