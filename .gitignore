@@ -27,3 +27,6 @@ optimization_results/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Local developer docs (not for repo)
+user_guide.md
