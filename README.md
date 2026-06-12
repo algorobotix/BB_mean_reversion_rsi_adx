@@ -12,29 +12,28 @@
 
 | Направление | Условия |
 |-------------|---------|
-| **LONG** | `Close < BB_lower` AND `RSI < 30` AND `ADX < 30` |
+| **LONG**  | `Close < BB_lower` AND `RSI < 30` AND `ADX < 30` |
 | **SHORT** | `Close > BB_upper` AND `RSI > 70` AND `ADX < 30` |
 
 ### Логика выхода
 
-| Причина | Описание |
-|---------|---------|
-| `BB_MID` | Цена закрытия достигла средней линии Боллинджера — закрытие по рынку |
+| Причина    | Описание |
+|------------|---------|
+| `BB_MID`   | Цена закрытия достигла средней линии Боллинджера — закрытие по рынку |
 | `FIXED_SL` | Цена пробила стоп-лосс — закрытие стоп-ордером |
 
-### Параметры по умолчанию (`signal_settings.py`)
+### Параметры по умолчанию (`config/settings.py`)
 
-| Параметр | Значение | Описание |
-|----------|----------|---------|
-| `bb_lenth` | 20 | Период Bollinger Bands |
-| `bb_std` | 2.0 | Множитель стандартного отклонения BB |
-| `rsi_len` | 14 | Период RSI |
-| `adx_len` | 14 | Период ADX |
-| `adx_threshold` | 30 | Максимальный ADX для входа (боковик) |
-| `interval` | `1h` | Таймфрейм |
-| `sl_atr_mult` | 2.5 | Множитель ATR для стоп-лосса |
-| `trade_usdt` | 150 | Размер позиции в USDT |
-| `commission` | 0.1% | Комиссия на сторону |
+| Параметр        | Значение | Описание |
+|-----------------|----------|---------|
+| `bb_lenth`      | 20       | Период Bollinger Bands |
+| `bb_std`        | 2.0      | Множитель стандартного отклонения BB |
+| `rsi_len`       | 14       | Период RSI |
+| `adx_len`       | 14       | Период ADX |
+| `adx_threshold` | 30       | Максимальный ADX для входа (боковик) |
+| `interval`      | `1h`     | Таймфрейм |
+| `top_by_cap`    | 100      | Количество монет по капитализации |
+| `commission`    | 0.1%     | Комиссия на сторону |
 
 ---
 
@@ -70,16 +69,27 @@
 
 ```
 .
-├── backtest.py          # Стратегия Backtrader + TradingView-график (Plotly)
-├── optimize.py          # Оптимизатор Optuna с walk-forward валидацией
-├── candles.py           # Загрузчик данных с Binance Futures и CSV-ридер
-├── signal_settings.py   # Все настраиваемые параметры стратегии
-├── analyze_trades.py    # Анализ лога сделок после бэктеста
-├── works.ipynb          # Исследовательский notebook
-├── bb_mean_reversion_rsi_adx.pine  # Эквивалент стратегии на Pine Script (TradingView)
-├── main.py              # Заготовка под живой бот (пока пустая)
-├── signals.py           # Заготовка под сканер сигналов (пока пустая)
-└── klines/              # Исторические OHLCV CSV (не в git — создаётся локально)
+├── main.py                      # Точка входа: сканер сигналов по топ-N монетам
+├── diagnose_network.py          # Утилита диагностики сетевого доступа
+│
+├── config/
+│   └── settings.py              # Все настраиваемые параметры стратегии
+│
+├── feed/
+│   └── candles.py               # Асинхронный загрузчик Binance Futures + CSV-хелперы
+│
+├── strategy/
+│   ├── signals.py               # get_signals() — сканер сигналов (live)
+│   └── backtest.py              # SimpleMeanReversionStrategy (Backtrader) + TradingView-график
+│
+├── optimization/
+│   └── optimizer.py             # Оптимизатор Optuna с walk-forward валидацией
+│
+├── analysis/
+│   └── analyze_trades.py        # Анализ лога сделок (CSV)
+│
+├── klines/                      # Исторические OHLCV CSV — 1h, ~55 пар, 2022–2026 (не в git)
+└── data/                        # Дополнительные CSV — 15m и другие TF (не в git)
 ```
 
 ---
@@ -108,35 +118,40 @@ source .venv/bin/activate
 ### 3. Установить зависимости
 
 ```bash
-pip install backtrader pandas numpy plotly requests pandas_ta optuna
+pip install backtrader pandas numpy plotly requests aiohttp pandas_ta optuna
 ```
 
 ### 4. Скачать исторические данные
 
-Данные скачиваются с Binance Futures API и сохраняются в папку `klines/`.  
-Откройте `signal_settings.py` и при необходимости измените `start_date`, `end_date`, `interval`.
-
-Затем запустите `candles.py`:
+Данные скачиваются с Binance Futures API асинхронно и сохраняются в папку `klines/`.  
+Настройте `config/settings.py` (период, таймфрейм, количество монет), затем запустите:
 
 ```bash
-python candles.py
+python feed/candles.py
 ```
 
-Скрипт получит топ-100 монет по капитализации и скачает для каждой OHLCV-историю. Для одного символа вручную:
+Скрипт получит топ-N монет по капитализации (CoinGecko + Binance) и параллельно скачает OHLCV-историю для каждой.
+
+Для одного символа или произвольного таймфрейма — напрямую из Python:
 
 ```python
-# В Python-консоли или notebook
-from candles import get_df, save_df_to_csv
-from signal_settings import interval, start_date, end_date
+from feed.candles import download_many_symbols_async
+import asyncio
 
-df = get_df('BTCUSDT', interval, start_date, end_date)
-save_df_to_csv(df, 'BTCUSDT', interval, start_date, end_date)
+async def run():
+    results = await download_many_symbols_async(
+        ['BTCUSDT', 'ETHUSDT'], interval='15m',
+        start_date='2026-01-01', end_date='2026-06-12',
+        filepath='klines_15m', save=True,
+    )
+
+asyncio.run(run())
 ```
 
 ### 5. Запустить бэктест
 
 ```bash
-python backtest.py
+python strategy/backtest.py
 ```
 
 По умолчанию запускается на `ETHUSDT`. Чтобы сменить символ — измените переменную `SYMBOL` в конце `backtest.py`:
@@ -151,33 +166,46 @@ if __name__ == '__main__':
 - В браузере — интерактивный график
 - В папке проекта — `backtest_SYMBOL_1h.html` и `trades_SYMBOL_1h.csv`
 
+### 6. Сканировать сигналы
+
+```bash
+# Сигналы из локальных CSV
+python main.py
+
+# Скачать свежие данные и сразу сканировать
+python main.py --download
+
+# Только одна монета
+python main.py --symbol BTCUSDT
+```
+
 ---
 
 ## Оптимизация параметров
 
-`optimize.py` перебирает комбинации параметров через Optuna и проверяет на out-of-sample данных.
+`optimization/optimizer.py` перебирает комбинации параметров через Optuna и проверяет на out-of-sample данных.
 
 ```bash
 # Базовый запуск (200 итераций, BTCUSDT)
-python optimize.py
+python optimization/optimizer.py --symbol BTCUSDT --trials 200
 
 # С walk-forward валидацией
-python optimize.py --symbol ETHUSDT --trials 500 --walk-forward --wf-folds 5
+python optimization/optimizer.py --symbol ETHUSDT --trials 500 --walk-forward --wf-folds 5
 
 # Сохранить study в БД для продолжения
-python optimize.py --trials 1000 --storage sqlite:///study.db
+python optimization/optimizer.py --trials 1000 --storage sqlite:///study.db
 ```
 
 **Доступные цели оптимизации** (`--objective`):
 
-| Значение | Описание |
-|----------|---------|
-| `composite` | Взвешенная сумма Sharpe + Sortino + Calmar + PF + SQN *(по умолчанию)* |
-| `sharpe` | Коэффициент Шарпа |
-| `sortino` | Коэффициент Сортино |
-| `calmar` | Calmar ratio |
-| `sqn` | System Quality Number |
-| `profit_factor` | Profit Factor |
+| Значение       | Описание |
+|----------------|---------|
+| `composite`    | Взвешенная сумма Sharpe + Sortino + Calmar + PF + SQN *(по умолчанию)* |
+| `sharpe`       | Коэффициент Шарпа |
+| `sortino`      | Коэффициент Сортино |
+| `calmar`       | Calmar ratio |
+| `sqn`          | System Quality Number |
+| `profit_factor`| Profit Factor |
 
 Результаты сохраняются в `optimization_results/SYMBOL_TIMESTAMP/`:
 - `best_params.json` — лучшие параметры и метрики
@@ -190,33 +218,21 @@ python optimize.py --trials 1000 --storage sqlite:///study.db
 ## Анализ сделок
 
 ```bash
-python analyze_trades.py
+python analysis/analyze_trades.py trades_BTCUSDT_1h.csv
 ```
 
-Читает `trades_BTCUSDT_1h.csv` и выводит статистику по стоп-лоссам, win/loss ratio, средним длительностям сделок.
-
----
-
-## Сканер сигналов (live)
-
-```python
-from candles import read_df_from_csv, get_signals
-from signal_settings import interval
-
-df = read_df_from_csv('BTCUSDT', interval=interval)
-signal = get_signals(df, 'BTCUSDT')   # → "Покупка" / "Продажа" / None
-```
+Читает CSV-лог сделок и выводит статистику по стоп-лоссам, win/loss ratio, средним длительностям.
 
 ---
 
 ## Результаты бэктеста (дефолтные параметры)
 
-| Символ | Период | Сделок | Винрейт | Итог | Макс. просадка | Шарп |
-|--------|--------|--------|---------|------|----------------|------|
-| BTCUSDT | 2022–2026 | 369 | 46.1% | $1 235 | 18.3% | −1.89 |
-| ETHUSDT | 2022–2026 | 297 | 50.8% | $1 339 | 19.6% | −0.31 |
+| Символ  | Период    | Сделок | Винрейт | Итог    | Макс. просадка | Шарп  |
+|---------|-----------|--------|---------|---------|----------------|-------|
+| BTCUSDT | 2022–2026 | 369    | 46.1%   | $1 235  | 18.3%          | −1.89 |
+| ETHUSDT | 2022–2026 | 297    | 50.8%   | $1 339  | 19.6%          | −0.31 |
 
-> Начальный депозит: $1 500. Стратегия убыточна на дефолтных параметрах — используйте `optimize.py` для подбора.
+> Начальный депозит: $1 500. Стратегия убыточна на дефолтных параметрах — используйте `optimization/optimizer.py` для подбора.
 
 ---
 

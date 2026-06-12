@@ -1,8 +1,8 @@
-
 top_by_cap = 100
 interval = '1h'
-start_date = '2022-01-01' #'2026-01-01 13:00:00'
-end_date = '2026-05-19' #'2026-01-01 13:00:00'
+start_date = '2022-01-01'
+end_date = '2026-05-19'
+
 bb_lenth = 20
 bb_std = 2.0
 

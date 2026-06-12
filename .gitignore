@@ -16,6 +16,7 @@ __pycache__/
 
 # Historical OHLCV data (large CSVs, not tracked in git)
 klines/
+klines_*/
 data/
 
 # Generated outputs
