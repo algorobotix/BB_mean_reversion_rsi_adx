@@ -1,0 +1,17 @@
+# Core — уже используются в проекте
+aiohttp>=3.9
+requests>=2.31
+pandas>=2.0
+pandas_ta>=0.3.14b
+numpy>=1.26
+backtrader>=1.9.78
+plotly>=5.18
+
+# TG-бот
+aiogram>=3.7
+
+# Async SQLite (настройки)
+aiosqlite>=0.20
+
+# Переменные окружения
+python-dotenv>=1.0
